@@ -1,0 +1,246 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  labels:
+    name: prometheus-config
+data:
+  prometheus.yml: |-
+    global:
+      scrape_interval: 5s
+      evaluation_interval: 5s
+    alerting:
+      alertmanagers:
+      - scheme: http
+        static_configs:
+        - targets:
+          - "alertmanager:9093"
+    rule_files:
+      - rules.yml
+    scrape_configs:
+      - job_name: 'MeethalteService'
+        metrics_path: 'metrics'
+        scrape_interval: 5s
+        static_configs:
+          - targets: [meethalteservice:8080]
+      - job_name: 'LijnenService'
+        metrics_path: 'metrics'
+        scrape_interval: 5s
+        static_configs:
+          - targets: [lijnenservice:8080]
+      - job_name: 'QbuzzAPIWrapper'
+        metrics_path: '/apiWrapperMetrics'
+        scrape_interval: 5s
+        static_configs:
+          - targets: [qbuzzapiwrapper:8080]
+      - job_name: 'RittenService'
+        metrics_path: 'metrics'
+        scrape_interval: 5s
+        static_configs:
+          - targets: [rittenservice:8080]
+      - job_name: 'RabbitMQ'
+        metrics_path: 'metrics'
+        scrape_interval: 5s
+        static_configs:
+          - targets: [rabbitmq:15692]
+      - job_name: 'RapportageService'
+        metrics_path: 'metrics'
+        scrape_interval: 5s
+        static_configs:
+          - targets: [rapportageservice:8080]
+      - job_name: 'AuthenticatieService'
+        metrics_path: 'metrics'
+        scrape_interval: 5s
+        static_configs:
+          - targets: [authenticatieservice:8080]
+      - job_name: 'ConcessieService'
+        metrics_path: 'metrics'
+        scrape_interval: 5s
+        static_configs:
+          - targets: [concessieservice:8080]
+      - job_name: 'LocatieService'
+        metrics_path: 'metrics'
+        scrape_interval: 5s
+        static_configs:
+          - targets: [locatieservice:8080]
+  rules.yml: |-
+    groups:
+    - name: AlertRules
+      rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Instance {{ $labels.instance }} down "
+          description: "{{ $labels.instance }} has been down for more than 1 minute."
+      - alert: HighMemoryUsage
+        expr: sum by (Microservice) (jvm_memory_used_bytes{area="heap"}) / sum by (Microservice) (jvm_memory_max_bytes{area="heap"}) * 100 > 75
+        for: 5m
+        labels:
+          severity: medium
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }} "
+          description: "{{ $labels.instance }} has a memory usage above 75% (current value: {{ $value }}%)"
+      - alert: HighAmountOfFailingCalls
+        expr: (rate(http_server_requests_seconds_count{status=~"4.."}[1m]) + rate(http_server_requests_seconds_count{status=~"5.."}[1m])) / rate(http_server_requests_seconds_count[1m])  * 100 > 10
+        for: 5m
+        labels:
+          severity: medium
+        annotations:
+          summary: "High amount of HTTP errors on {{ $labels.instance }} "
+          description: "more than 10% of traffic fails on {{ $labels.instance }}(current value: {{ $value }}%)"
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_usage[1m]) * 10000 > 80
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "High CPU usage by service: {{ $labels.instance }}. Usage is higher than 80% "
+          description: "High CPU usage by {{ $labels.instance }}. CPU usage had been above 80% for at least 2 minutes"
+      - alert: RabbitmqTooManyUnacknowledgedMessages
+        expr: sum(rabbitmq_queue_messages_unacked) > 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Rabbitmq too many unack messages (instance {{ $labels.instance }})"
+          description: "Too many unacknowledged messages ({{ $value }})"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: prometheus
+    version: "1.0"
+  name: prometheus
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: prometheus
+      version: "1.0"
+  template:
+    metadata:
+      labels:
+        app: prometheus
+        version: "1.0"
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - image:  prom/prometheus
+          imagePullPolicy: Always
+          name: prometheus
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - mountPath: /etc/prometheus/prometheus.yml
+              name: prometheus-config
+              subPath: prometheus.yml
+            - mountPath: /etc/prometheus/rules.yml
+              name: prometheus-config
+              subPath: rules.yml
+      restartPolicy: Always
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: prometheus
+  name: prometheus
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: prometheus
+  namespace: customer
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/metrics
+      - services
+      - endpoints
+      - pods
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - configmaps
+    verbs: ["get"]
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+
+  name: prometheus
+  namespace: customer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+  namespace: customer
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: customer
+roleRef:
+  kind: ClusterRole
+  name: prometheus
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+data:
+  auth: cWJ1eno6JGFwcjEkbUkuclJsbUMkYW9NMkNEWFQ2Njd5cE9WcmhVanNzLgo=
+metadata:
+  name: prometheus-password
+
+---
+  apiVersion: 'networking.k8s.io/v1'
+  kind: 'Ingress'
+  metadata:
+    annotations:
+      cert-manager.io/cluster-issuer: 'letsencrypt-issuer' # letsencrypt configuration
+      nginx.ingress.kubernetes.io/auth-type: basic
+      nginx.ingress.kubernetes.io/auth-secret: prometheus-password
+      nginx.ingress.kubernetes.io/auth-realm: "Geef het wachtwoord op"
+    name: 'prometheus-ingress'
+  spec:
+    ingressClassName: 'nginx'
+    rules:
+      - host: 'prometheus.han-project2.minor.infosupport.dev'
+        http:
+          paths:
+            - backend:
+                service:
+                  name: 'prometheus'
+                  port: # use number or name, not both
+                    number: 9090
+              path: '/'
+              pathType: 'Prefix' # "Exact", "Prefix", or "ImplementationSpecific"
+    tls:
+      - hosts:
+          - 'prometheus.han-project2.minor.infosupport.dev'
+        secretName: 'prometheus-ingress-tls-secret'
