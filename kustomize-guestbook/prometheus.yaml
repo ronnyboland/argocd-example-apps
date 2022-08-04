@@ -1,21 +1,4 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: prometheus-config
-  labels:
-    name: prometheus-config
-data:
-  prometheus.yml: |-
-    global:
-      scrape_interval: 5s
-      evaluation_interval: 5s
-    alerting:
- 
-    rule_files:
-      - rules.yml
-     
-  
----
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -47,9 +30,6 @@ spec:
             - mountPath: /etc/prometheus/prometheus.yml
               name: prometheus-config
               subPath: prometheus.yml
-            - mountPath: /etc/prometheus/rules.yml
-              name: prometheus-config
-              subPath: rules.yml
       restartPolicy: Always
       volumes:
         - name: prometheus-config
