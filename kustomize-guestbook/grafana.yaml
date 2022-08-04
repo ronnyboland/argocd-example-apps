@@ -44,19 +44,7 @@ data:
         url: http://prometheus:9090
         version: 1
         isDefault: true
-      - name: Loki
-        type: loki
-        access: proxy
-        url: http://loki:3100
-        jsonData:
-          maxLines: 1000
-      - name: Rapportages
-        type: mysql
-        url: mysql-rapp:3306
-        database: Rapportages
-        user: mysqluser
-        secureJsonData:
-          password: ${MYSQL_USER_PASSWORD}
+   
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -86,20 +74,9 @@ spec:
         - name: grafana
           env:
             - name: GF_SECURITY_ADMIN_USER
-              valueFrom:
-                secretKeyRef:
-                  name: grafana-credentials
-                  key: admin-user
+              value: admin
             - name: GF_SECURITY_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: grafana-credentials
-                  key: admin-password
-            - name: MYSQL_USER_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  key: mysql-user-password
-                  name: mysql-credentials
+              value: value
           image: grafana/grafana:8.3.3
           ports:
             - name: grafana
@@ -112,22 +89,7 @@ spec:
               name: grafana-datasources
             - name: grafana-dashboardproviders
               mountPath: "/etc/grafana/provisioning/dashboards/"
-            - name: dashboard-ivu
-              mountPath: /var/lib/grafana/dashboards/ivu   
-            - name: vertraging-lijnen-dashboard
-              mountPath: /var/lib/grafana/dashboards/lijn-prestaties           
-            - name: dashboard-loki
-              mountPath: /var/lib/grafana/dashboards/loki           
-            - name: dashboard-punctualiteit
-              mountPath: /var/lib/grafana/dashboards/punctualiteit           
-            - name:  dashboard-rabbitmq
-              mountPath: /var/lib/grafana/dashboards/rabbitmq           
-            - name: dashboard-service
-              mountPath: /var/lib/grafana/dashboards/service           
-            - name: vertraging-concessie-dashboard
-              mountPath: /var/lib/grafana/dashboards/concessie          
-            - name: vertraging-haltes-dashboard
-              mountPath: /var/lib/grafana/dashboards/halte
+            
           resources:
             limits:
               memory: 256Mi
@@ -142,38 +104,6 @@ spec:
         - name: grafana-dashboardproviders
           configMap:
             name: grafana-dashboardproviders
-        - name: dashboard-ivu
-          configMap:
-            defaultMode: 420
-            name: gebruik-ivu-app-dashboard 
-        - name: vertraging-lijnen-dashboard
-          configMap:
-            defaultMode: 420
-            name: vertraging-lijnen-dashboard  
-        - name: dashboard-loki
-          configMap:
-            defaultMode: 420
-            name: dashboard-loki       
-        - name: dashboard-punctualiteit
-          configMap:
-            defaultMode: 420
-            name: dashboard-punctualiteit        
-        - name: dashboard-rabbitmq
-          configMap:
-            defaultMode: 420
-            name: dashboard-rabbitmq        
-        - name: dashboard-service
-          configMap:
-            defaultMode: 420
-            name: dashboard-service
-        - name: vertraging-concessie-dashboard
-          configMap:
-            defaultMode: 420
-            name: vertraging-concessie-dashboard  
-        - name: vertraging-haltes-dashboard
-          configMap:
-            defaultMode: 420
-            name: vertraging-haltes-dashboard
 ---
 apiVersion: v1
 kind: Service
@@ -187,28 +117,3 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
-
----
-apiVersion: 'networking.k8s.io/v1'
-kind: 'Ingress'
-metadata:
-  annotations:
-    cert-manager.io/cluster-issuer: 'letsencrypt-issuer' # letsencrypt configuration
-  name: 'grafana-ingress'
-spec:
-  ingressClassName: 'nginx'
-  rules:
-    - host: 'grafana.han-project2.minor.infosupport.dev'
-      http:
-        paths:
-          - backend:
-              service:
-                name: 'grafana'
-                port: # use number or name, not both
-                  number: 3000
-            path: '/'
-            pathType: 'Prefix' # "Exact", "Prefix", or "ImplementationSpecific"
-  tls:
-    - hosts:
-        - 'grafana.han-project2.minor.infosupport.dev'
-      secretName: 'grafana-ingress-tls-secret'
